@@ -19,16 +19,3 @@ jobs:
         env: { FUSED_ATTN_SKIP_CUDA: "1" }
       - run: ruff check .
       - run: TRITON_INTERPRET=1 pytest -q
-
-  gpu-tests:
-    # Self-hosted GPU runner (label `gpu`); builds the CUDA extension and runs
-    # the full fp16/bf16 matrix plus the benchmark smoke test.
-    if: github.repository_owner != 'dependabot'
-    runs-on: [self-hosted, gpu]
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v4
-      - run: pip install -e .[dev] --no-build-isolation
-      - run: pytest -q
-      - run: python benchmarks/bench.py --seqlens 512 2048 --causal --out /tmp/bench.csv
-      - run: python benchmarks/bench_decode.py --ctx 4096 16384

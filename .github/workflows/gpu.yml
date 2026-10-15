@@ -1,0 +1,14 @@
+name: gpu
+# Needs a self-hosted runner with an NVIDIA GPU (label `gpu`); run manually from the Actions tab.
+on:
+  workflow_dispatch:
+
+jobs:
+  gpu-tests:
+    runs-on: [self-hosted, gpu]
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install -e .[dev] --no-build-isolation
+      - run: pytest -q
+      - run: python benchmarks/bench.py --seqlens 512 2048 --causal --out /tmp/bench.csv
+      - run: python benchmarks/bench_decode.py --ctx 4096 16384
