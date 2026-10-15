@@ -11,12 +11,13 @@ try:
     from torch.utils.cpp_extension import CUDA_HOME, BuildExtension, CUDAExtension
 
     if CUDA_HOME is not None and os.environ.get("FUSED_ATTN_SKIP_CUDA", "0") != "1":
-        arch_flags = os.environ.get("TORCH_CUDA_ARCH_LIST")  # e.g. "8.0;9.0"
+        # The Tensor-Core kernel needs sm_80+; default to Ampere/Hopper if the user gave no list.
+        os.environ.setdefault("TORCH_CUDA_ARCH_LIST", "8.0;8.6;8.9;9.0")
         nvcc = ["-O3", "--use_fast_math", "-std=c++17", "--expt-relaxed-constexpr", "-lineinfo"]
         ext_modules.append(
             CUDAExtension(
                 name="fused_attn._C",
-                sources=["csrc/bindings.cpp", "csrc/flash_attn.cu"],
+                sources=["csrc/bindings.cpp", "csrc/flash_attn.cu", "csrc/flash_attn_mma.cu"],
                 include_dirs=[os.path.abspath("csrc")],
                 extra_compile_args={"cxx": ["-O3", "-std=c++17"], "nvcc": nvcc},
             )
