@@ -33,6 +33,6 @@ setup(
     ext_modules=ext_modules,
     cmdclass=cmdclass,
     python_requires=">=3.10",
-    install_requires=["torch>=2.4", "triton>=3.0"],
+    install_requires=["torch>=2.4", "triton>=3.0", "numpy"],   # numpy: Triton interpreter + benchmarks
     extras_require={"dev": ["pytest", "matplotlib"], "bench": ["flash-attn"]},
 )
