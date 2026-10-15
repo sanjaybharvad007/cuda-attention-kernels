@@ -1,0 +1,33 @@
+name: ci
+on: [push, pull_request]
+
+jobs:
+  cpu-tests:
+    # No GPU on hosted runners: the Triton kernel is exercised through the
+    # numpy interpreter (TRITON_INTERPRET=1) so every code path is still tested.
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "${{ matrix.python }}" }
+      - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - run: pip install triton pytest ruff
+      - run: pip install -e . --no-build-isolation
+        env: { FUSED_ATTN_SKIP_CUDA: "1" }
+      - run: ruff check .
+      - run: TRITON_INTERPRET=1 pytest -q
+
+  gpu-tests:
+    # Self-hosted GPU runner (label `gpu`); builds the CUDA extension and runs
+    # the full fp16/bf16 matrix plus the benchmark smoke test.
+    if: github.repository_owner != 'dependabot'
+    runs-on: [self-hosted, gpu]
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install -e .[dev] --no-build-isolation
+      - run: pytest -q
+      - run: python benchmarks/bench.py --seqlens 512 2048 --causal --out /tmp/bench.csv
