@@ -4,8 +4,10 @@
 composes with ``torch.compile`` (graph breaks are avoided via the fake/meta
 implementation) and shows up by name in profiler traces.
 
-Backend priority: CUDA C++ extension (if built, dtype/head_dim supported)
--> Triton -> PyTorch reference.  Override with ``FUSED_ATTN_BACKEND``.
+Backend priority: CUDA Tensor-Core kernel (sm_80+, fp16/bf16, D 64/128)
+-> CUDA SIMT kernel -> Triton -> PyTorch reference.  Decode-shaped calls
+(short queries, long keys) go to the split-K Triton kernel.  Override with
+``FUSED_ATTN_BACKEND=cuda_mma|cuda|triton|splitk|reference``.
 """
 from __future__ import annotations
 
@@ -24,32 +26,47 @@ except Exception:  # pragma: no cover - only present after `pip install -e .` wi
 
 try:
     from .triton_fwd import attention_triton, attention_varlen_triton
+    from .triton_splitk import attention_splitk_triton
 
     _HAS_TRITON = True
 except Exception:  # pragma: no cover
     _HAS_TRITON = False
 
-BACKENDS = ("cuda", "triton", "reference")
+BACKENDS = ("cuda_mma", "cuda", "triton", "splitk", "reference")
+SPLITK_MAX_Q = 16          # decode-shaped: few query rows ...
+SPLITK_MIN_K = 2048        # ... against a long context
+
+
+def _has_mma() -> bool:
+    return _cuda_ext is not None and hasattr(_cuda_ext, "has_tensor_core_kernel") and _cuda_ext.has_tensor_core_kernel()
 
 
 def available_backends() -> list[str]:
     out = []
+    if _has_mma():
+        out.append("cuda_mma")
     if _cuda_ext is not None:
         out.append("cuda")
     if _HAS_TRITON:
-        out.append("triton")
+        out += ["triton", "splitk"]
     out.append("reference")
     return out
 
 
-def _pick_backend(q: torch.Tensor) -> str:
+def _pick_backend(q: torch.Tensor, k: torch.Tensor | None = None) -> str:
     forced = os.environ.get("FUSED_ATTN_BACKEND")
     if forced:
         assert forced in BACKENDS, f"unknown backend {forced}"
         return forced
     on_gpu = q.is_cuda
     interp = os.environ.get("TRITON_INTERPRET", "0") == "1"
-    if on_gpu and _cuda_ext is not None and q.shape[-1] in (64, 128):
+    d = q.shape[-1]
+    decode_shaped = k is not None and q.shape[-2] <= SPLITK_MAX_Q and k.shape[-2] >= SPLITK_MIN_K
+    if _HAS_TRITON and (on_gpu or interp) and decode_shaped:
+        return "splitk"
+    if on_gpu and _has_mma() and q.dtype in (torch.float16, torch.bfloat16) and d in (64, 128):
+        return "cuda_mma"
+    if on_gpu and _cuda_ext is not None and d in (64, 128):
         return "cuda"
     if _HAS_TRITON and (on_gpu or interp):
         return "triton"
@@ -70,9 +87,13 @@ def attention(
     Returns [B, H_q, N_q, D] in q's dtype.
     """
     scale = 1.0 / math.sqrt(q.shape[-1]) if scale is None else scale
-    backend = _pick_backend(q)
+    backend = _pick_backend(q, k)
+    if backend == "cuda_mma":
+        return _cuda_ext.attention_fwd_mma(q, k, v, causal, scale)
     if backend == "cuda":
         return _cuda_ext.attention_fwd(q, k, v, causal, scale)
+    if backend == "splitk":
+        return attention_splitk_triton(q, k, v, causal=causal, scale=scale)
     if backend == "triton":
         return attention_triton(q, k, v, causal=causal, scale=scale)
     return attention_reference(q, k, v, causal=causal, scale=scale)
