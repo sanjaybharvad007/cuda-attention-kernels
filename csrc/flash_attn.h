@@ -21,6 +21,10 @@ struct AttnParams {
   DType dtype;
 };
 
+// SIMT kernel (fp16 / bf16 / fp32, head_dim 64/128, any arch)
 void run_attention_fwd(const AttnParams& p, cudaStream_t stream);
+// Tensor-Core kernel: mma.sync + ldmatrix + cp.async (fp16 / bf16, head_dim 64/128, sm_80+)
+void run_attention_fwd_mma(const AttnParams& p, cudaStream_t stream);
+size_t attention_fwd_mma_smem_bytes(int head_dim, int elem_size);
 
 }  // namespace fused_attn
