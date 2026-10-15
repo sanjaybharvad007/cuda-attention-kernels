@@ -8,7 +8,7 @@ jobs:
     runs-on: [self-hosted, gpu]
     steps:
       - uses: actions/checkout@v4
-      - run: pip install -e .[dev] --no-build-isolation
+      - run: pip install setuptools wheel && pip install -e .[dev] --no-build-isolation
       - run: pytest -q
       - run: python benchmarks/bench.py --seqlens 512 2048 --causal --out /tmp/bench.csv
       - run: python benchmarks/bench_decode.py --ctx 4096 16384

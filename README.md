@@ -43,8 +43,9 @@ The Tensor-Core kernel is documented step by step in
 ## Install
 
 ```bash
-pip install -e .                      # builds csrc/ if nvcc is found
-FUSED_ATTN_SKIP_CUDA=1 pip install -e .   # Triton-only
+pip install setuptools wheel
+pip install -e . --no-build-isolation                        # builds csrc/ if nvcc is found
+FUSED_ATTN_SKIP_CUDA=1 pip install -e . --no-build-isolation   # Triton-only
 ```
 
 ## Test
