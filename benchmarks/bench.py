@@ -11,7 +11,7 @@ import argparse
 import csv
 import os
 import sys
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 
 import torch
 import torch.nn.functional as F
